@@ -1,8 +1,7 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
-#if defined(ARDUINO_WATCHY_V30) || defined(ARDUINO_ESP32S3_\
-DEV)
+#if defined(ARDUINO_WATCHY_V30) || defined(ARDUINO_ESP32S3_DEV)
   #ifndef WATCHSLINGER_V3
     #define WATCHSLINGER_V3
   #endif
