@@ -16,7 +16,7 @@ class WatchslingerApp {
 public:
   virtual ~WatchslingerApp() {}
   virtual void onOpen(Watchslinger &watch) = 0;
-  virtual void onClose(Watchslinger &watch) {}
+  virtual void onClose(Watchslinger &watch) { (void)watch; }
   virtual bool onButton(Watchslinger &watch, WatchslingerButton button) {
     (void)watch;
     (void)button;
@@ -39,7 +39,7 @@ struct WatchslingerAppList {
   WatchslingerAppList() : items(nullptr), count(0) {}
   WatchslingerAppList(const WatchslingerAppDescriptor *appItems,
                       uint8_t appCount)
-      : items(appItems), count(appCount) {}
+      : items(appItems), count(appItems == nullptr ? 0 : appCount) {}
 };
 
 enum class WatchslingerMenuMode : uint8_t {
@@ -79,7 +79,7 @@ public:
   explicit WatchslingerLegacyApp(WatchslingerLegacyHandler handler)
       : handler_(handler) {}
 
-  void onOpen(Watchslinger &watch) override;
+  void onOpen(Watchslinger &watch) override { (watch.*handler_)(); }
 
 private:
   WatchslingerLegacyHandler handler_;

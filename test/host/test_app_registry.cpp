@@ -21,6 +21,15 @@
     }                                                                           \
   } while (0)
 
+class Watchslinger {
+public:
+  Watchslinger() : legacyOpened(false) {}
+
+  void openLegacy() { legacyOpened = true; }
+
+  bool legacyOpened;
+};
+
 class DummyApp : public WatchslingerApp {
 public:
   void onOpen(Watchslinger &) override {}
@@ -31,6 +40,12 @@ int main() {
   WatchslingerAppRegistry emptyRegistry(emptyList);
   ASSERT_EQ(0, emptyRegistry.count());
   ASSERT_TRUE(emptyRegistry.get(0) == nullptr);
+
+  WatchslingerAppList invalidList(nullptr, 1);
+  WatchslingerAppRegistry invalidRegistry(invalidList);
+  ASSERT_EQ(0, invalidList.count);
+  ASSERT_EQ(0, invalidRegistry.count());
+  ASSERT_TRUE(invalidRegistry.get(0) == nullptr);
 
   DummyApp stockA;
   DummyApp stockB;
@@ -64,6 +79,12 @@ int main() {
   ASSERT_TRUE(valid.isLaunchable());
   ASSERT_TRUE(!missingLabel.isLaunchable());
   ASSERT_TRUE(!missingApp.isLaunchable());
+
+  Watchslinger watch;
+  WatchslingerLegacyApp legacyApp(&Watchslinger::openLegacy);
+  ASSERT_TRUE(!watch.legacyOpened);
+  legacyApp.onOpen(watch);
+  ASSERT_TRUE(watch.legacyOpened);
 
   printf("all app registry tests passed\n");
   return 0;
