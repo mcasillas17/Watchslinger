@@ -1,6 +1,6 @@
 #include "Watchy.h"
 
-#ifdef ARDUINO_ESP32S3_DEV
+#ifdef WATCHSLINGER_V3
   Watchy32KRTC Watchy::RTC;
   #define ACTIVE_LOW 0
 #else
@@ -27,7 +27,7 @@ RTC_DATA_ATTR char lastSSID[30];
 void Watchy::init(String datetime) {
   esp_sleep_wakeup_cause_t wakeup_reason;
   wakeup_reason = esp_sleep_get_wakeup_cause(); // get wake up reason
-  #ifdef ARDUINO_ESP32S3_DEV
+  #ifdef WATCHSLINGER_V3
     Wire.begin(WATCHY_V3_SDA, WATCHY_V3_SCL);     // init i2c
   #else
     Wire.begin(SDA, SCL);                         // init i2c
@@ -37,7 +37,7 @@ void Watchy::init(String datetime) {
   display.epd2.initWatchy();
 
   switch (wakeup_reason) {
-  #ifdef ARDUINO_ESP32S3_DEV
+  #ifdef WATCHSLINGER_V3
   case ESP_SLEEP_WAKEUP_TIMER: // RTC Alarm
   #else
   case ESP_SLEEP_WAKEUP_EXT0: // RTC Alarm
@@ -67,7 +67,7 @@ void Watchy::init(String datetime) {
   case ESP_SLEEP_WAKEUP_EXT1: // button Press
     handleButtonPress();
     break;
-  #ifdef ARDUINO_ESP32S3_DEV
+  #ifdef WATCHSLINGER_V3
   case ESP_SLEEP_WAKEUP_EXT0: // USB plug in
     pinMode(USB_DET_PIN, INPUT);
     USB_PLUGGED_IN = (digitalRead(USB_DET_PIN) == 1);
@@ -80,7 +80,7 @@ void Watchy::init(String datetime) {
   default: // reset
     RTC.config(datetime);
     _bmaConfig();
-    #ifdef ARDUINO_ESP32S3_DEV
+    #ifdef WATCHSLINGER_V3
     pinMode(USB_DET_PIN, INPUT);
     USB_PLUGGED_IN = (digitalRead(USB_DET_PIN) == 1);
     #endif    
@@ -98,7 +98,7 @@ void Watchy::init(String datetime) {
 void Watchy::deepSleep() {
   display.hibernate();
   RTC.clearAlarm();        // resets the alarm flag in the RTC
-  #ifdef ARDUINO_ESP32S3_DEV
+  #ifdef WATCHSLINGER_V3
   esp_sleep_enable_ext0_wakeup((gpio_num_t)USB_DET_PIN, USB_PLUGGED_IN ? LOW : HIGH); //// enable deep sleep wake on USB plug in/out
   rtc_gpio_set_direction((gpio_num_t)USB_DET_PIN, RTC_GPIO_MODE_INPUT_ONLY);
   rtc_gpio_pullup_en((gpio_num_t)USB_DET_PIN);
@@ -369,7 +369,7 @@ void Watchy::showAbout() {
   display.print(voltage);
   display.println("V");
 
-  #ifndef ARDUINO_ESP32S3_DEV
+  #ifndef WATCHSLINGER_V3
   display.print("Uptime: ");
   RTC.read(currentTime);
   time_t b = makeTime(bootTime);
@@ -428,7 +428,7 @@ void Watchy::setTime() {
 
   RTC.read(currentTime);
 
-  #ifdef ARDUINO_ESP32S3_DEV
+  #ifdef WATCHSLINGER_V3
   uint8_t minute = currentTime.Minute;
   uint8_t hour   = currentTime.Hour;
   uint8_t day    = currentTime.Day;
@@ -576,7 +576,7 @@ void Watchy::setTime() {
   tmElements_t tm;
   tm.Month  = month;
   tm.Day    = day;
-  #ifdef ARDUINO_ESP32S3_DEV
+  #ifdef WATCHSLINGER_V3
   tm.Year   = year;
   #else
   tm.Year   = y2kYearToTm(year);
@@ -754,7 +754,7 @@ weatherData Watchy::_getWeatherData(String cityID, String lat, String lon, Strin
 }
 
 float Watchy::getBatteryVoltage() {
-  #ifdef ARDUINO_ESP32S3_DEV
+  #ifdef WATCHSLINGER_V3
     return analogReadMilliVolts(BATT_ADC_PIN) / 1000.0f * ADC_VOLTAGE_DIVIDER;
   #else
   if (RTC.rtcType == DS3231) {

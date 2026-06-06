@@ -16,7 +16,7 @@
 #include "bma.h"
 #include "config.h"
 #include "esp_chip_info.h"
-#ifdef ARDUINO_ESP32S3_DEV
+#ifdef WATCHSLINGER_V3
   #include "Watchy32KRTC.h"
   #include "soc/rtc.h"
   #include "soc/rtc_io_reg.h"
@@ -64,7 +64,7 @@ typedef struct watchySettings {
 
 class Watchy {
 public:
-  #ifdef ARDUINO_ESP32S3_DEV
+  #ifdef WATCHSLINGER_V3
    static Watchy32KRTC RTC;
   #else
    static WatchyRTC RTC;
