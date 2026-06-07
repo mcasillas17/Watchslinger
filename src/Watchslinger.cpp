@@ -1,4 +1,5 @@
 #include "Watchslinger.h"
+#include "WatchslingerMenu.h"
 
 #ifdef WATCHSLINGER_V3
   Watchy32KRTC Watchslinger::RTC;
@@ -350,68 +351,13 @@ void Watchslinger::handleButtonPress() {
 }
 
 void Watchslinger::showMenu(byte menuIndex, bool partialRefresh) {
-  display.setFullWindow();
-  display.fillScreen(GxEPD_BLACK);
-  display.setFont(&FreeMonoBold9pt7b);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-  int16_t yPos;
-
-  const char *menuItems[] = {
-      "About Watchy", "Vibrate Motor", "Show Accelerometer",
-      "Set Time",     "Setup WiFi",    /*"Update Firmware",*/
-      "Sync NTP"};
-  for (int i = 0; i < MENU_LENGTH; i++) {
-    yPos = MENU_HEIGHT + (MENU_HEIGHT * i);
-    display.setCursor(0, yPos);
-    if (i == menuIndex) {
-      display.getTextBounds(menuItems[i], 0, yPos, &x1, &y1, &w, &h);
-      display.fillRect(x1 - 1, y1 - 10, 200, h + 15, GxEPD_WHITE);
-      display.setTextColor(GxEPD_BLACK);
-      display.println(menuItems[i]);
-    } else {
-      display.setTextColor(GxEPD_WHITE);
-      display.println(menuItems[i]);
-    }
-  }
-
-  display.display(partialRefresh);
-
-  guiState = MAIN_MENU_STATE;
-  alreadyInMenu = false;
+  WatchslingerMenu menu(*this, appRegistry());
+  menu.show(menuIndex, partialRefresh, true);
 }
 
 void Watchslinger::showFastMenu(byte menuIndex) {
-  display.setFullWindow();
-  display.fillScreen(GxEPD_BLACK);
-  display.setFont(&FreeMonoBold9pt7b);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-  int16_t yPos;
-
-  const char *menuItems[] = {
-      "About Watchy", "Vibrate Motor", "Show Accelerometer",
-      "Set Time",     "Setup WiFi",    /*"Update Firmware",*/
-      "Sync NTP"};
-  for (int i = 0; i < MENU_LENGTH; i++) {
-    yPos = MENU_HEIGHT + (MENU_HEIGHT * i);
-    display.setCursor(0, yPos);
-    if (i == menuIndex) {
-      display.getTextBounds(menuItems[i], 0, yPos, &x1, &y1, &w, &h);
-      display.fillRect(x1 - 1, y1 - 10, 200, h + 15, GxEPD_WHITE);
-      display.setTextColor(GxEPD_BLACK);
-      display.println(menuItems[i]);
-    } else {
-      display.setTextColor(GxEPD_WHITE);
-      display.println(menuItems[i]);
-    }
-  }
-
-  display.display(true);
-
-  guiState = MAIN_MENU_STATE;
+  WatchslingerMenu menu(*this, appRegistry());
+  menu.show(menuIndex, true, false);
 }
 
 void Watchslinger::showAbout() {
