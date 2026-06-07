@@ -196,77 +196,61 @@ void Watchslinger::deepSleep() {
   esp_deep_sleep_start();
 }
 
+void Watchslinger::_selectMenuItem() {
+  WatchslingerMenu menu(*this, appRegistry());
+  menu.launch(menuIndex);
+}
+
+void Watchslinger::_moveMenuSelection(int8_t delta, bool fastRefresh) {
+  WatchslingerMenu menu(*this, appRegistry());
+  menuIndex = menu.wrappedIndex(menuIndex, delta);
+  if (fastRefresh) {
+    showFastMenu(menuIndex);
+  } else {
+    showMenu(menuIndex, true);
+  }
+}
+
+void Watchslinger::_returnToWatchFace() {
+  RTC.read(currentTime);
+  showWatchFace(false);
+}
+
 void Watchslinger::handleButtonPress() {
   uint64_t wakeupBit = esp_sleep_get_ext1_wakeup_status();
-  // Menu Button
   if (wakeupBit & MENU_BTN_MASK) {
-    if (guiState ==
-        WATCHFACE_STATE) { // enter menu state if coming from watch face
+    if (guiState == WATCHFACE_STATE) {
       showMenu(menuIndex, false);
-    } else if (guiState ==
-               MAIN_MENU_STATE) { // if already in menu, then select menu item
-      switch (menuIndex) {
-      case 0:
-        showAbout();
-        break;
-      case 1:
-        showBuzz();
-        break;
-      case 2:
-        showAccelerometer();
-        break;
-      case 3:
-        setTime();
-        break;
-      case 4:
-        setupWifi();
-        break;
-      /*case 5:
-        showUpdateFW();
-        break;*/
-      case 5:
-        showSyncNTP();
-        break;
-      default:
-        break;
-      }
-    } /*else if (guiState == FW_UPDATE_STATE) {
-      updateFWBegin();
-    }*/
-  }
-  // Back Button
-  else if (wakeupBit & BACK_BTN_MASK) {
-    if (guiState == MAIN_MENU_STATE) { // exit to watch face if already in menu
-      RTC.read(currentTime);
-      showWatchFace(false);
+    } else if (guiState == MAIN_MENU_STATE) {
+      _selectMenuItem();
     } else if (guiState == APP_STATE) {
-      showMenu(menuIndex, false); // exit to menu if already in app
+      dispatchActiveAppButton(WatchslingerButton::Menu);
+    }
+  } else if (wakeupBit & BACK_BTN_MASK) {
+    if (guiState == MAIN_MENU_STATE) {
+      _returnToWatchFace();
+    } else if (guiState == APP_STATE) {
+      if (!dispatchActiveAppButton(WatchslingerButton::Back)) {
+        showMenu(menuIndex, false);
+      }
     } else if (guiState == FW_UPDATE_STATE) {
-      showMenu(menuIndex, false); // exit to menu if already in app
+      showMenu(menuIndex, false);
     } else if (guiState == WATCHFACE_STATE) {
       return;
     }
-  }
-  // Up Button
-  else if (wakeupBit & UP_BTN_MASK) {
-    if (guiState == MAIN_MENU_STATE) { // increment menu index
-      menuIndex--;
-      if (menuIndex < 0) {
-        menuIndex = MENU_LENGTH - 1;
-      }
-      showMenu(menuIndex, true);
+  } else if (wakeupBit & UP_BTN_MASK) {
+    if (guiState == MAIN_MENU_STATE) {
+      _moveMenuSelection(-1, false);
+    } else if (guiState == APP_STATE) {
+      dispatchActiveAppButton(WatchslingerButton::Up);
     } else if (guiState == WATCHFACE_STATE) {
       return;
     }
-  }
-  // Down Button
-  else if (wakeupBit & DOWN_BTN_MASK) {
-    if (guiState == MAIN_MENU_STATE) { // decrement menu index
-      menuIndex++;
-      if (menuIndex > MENU_LENGTH - 1) {
-        menuIndex = 0;
-      }
-      showMenu(menuIndex, true);
+  } else if (wakeupBit & DOWN_BTN_MASK) {
+    if (guiState == MAIN_MENU_STATE) {
+      _moveMenuSelection(1, false);
+    } else if (guiState == APP_STATE) {
+      dispatchActiveAppButton(WatchslingerButton::Down);
     } else if (guiState == WATCHFACE_STATE) {
       return;
     }
@@ -285,65 +269,36 @@ void Watchslinger::handleButtonPress() {
     } else {
       if (digitalRead(MENU_BTN_PIN) == ACTIVE_LOW) {
         lastTimeout = millis();
-        if (guiState ==
-            MAIN_MENU_STATE) { // if already in menu, then select menu item
-          switch (menuIndex) {
-          case 0:
-            showAbout();
-            break;
-          case 1:
-            showBuzz();
-            break;
-          case 2:
-            showAccelerometer();
-            break;
-          case 3:
-            setTime();
-            break;
-          case 4:
-            setupWifi();
-            break;
-          /*case 5:
-            showUpdateFW();
-            break;*/
-          case 5:
-            showSyncNTP();
-            break;
-          default:
-            break;
-          }
-        }/* else if (guiState == FW_UPDATE_STATE) {
-          updateFWBegin();
-        }*/
+        if (guiState == MAIN_MENU_STATE) {
+          _selectMenuItem();
+        } else if (guiState == APP_STATE) {
+          dispatchActiveAppButton(WatchslingerButton::Menu);
+        }
       } else if (digitalRead(BACK_BTN_PIN) == ACTIVE_LOW) {
         lastTimeout = millis();
-        if (guiState ==
-            MAIN_MENU_STATE) { // exit to watch face if already in menu
-          RTC.read(currentTime);
-          showWatchFace(false);
-          break; // leave loop
+        if (guiState == MAIN_MENU_STATE) {
+          _returnToWatchFace();
+          break;
         } else if (guiState == APP_STATE) {
-          showMenu(menuIndex, false); // exit to menu if already in app
+          if (!dispatchActiveAppButton(WatchslingerButton::Back)) {
+            showMenu(menuIndex, false);
+          }
         } else if (guiState == FW_UPDATE_STATE) {
-          showMenu(menuIndex, false); // exit to menu if already in app
+          showMenu(menuIndex, false);
         }
       } else if (digitalRead(UP_BTN_PIN) == ACTIVE_LOW) {
         lastTimeout = millis();
-        if (guiState == MAIN_MENU_STATE) { // increment menu index
-          menuIndex--;
-          if (menuIndex < 0) {
-            menuIndex = MENU_LENGTH - 1;
-          }
-          showFastMenu(menuIndex);
+        if (guiState == MAIN_MENU_STATE) {
+          _moveMenuSelection(-1, true);
+        } else if (guiState == APP_STATE) {
+          dispatchActiveAppButton(WatchslingerButton::Up);
         }
       } else if (digitalRead(DOWN_BTN_PIN) == ACTIVE_LOW) {
         lastTimeout = millis();
-        if (guiState == MAIN_MENU_STATE) { // decrement menu index
-          menuIndex++;
-          if (menuIndex > MENU_LENGTH - 1) {
-            menuIndex = 0;
-          }
-          showFastMenu(menuIndex);
+        if (guiState == MAIN_MENU_STATE) {
+          _moveMenuSelection(1, true);
+        } else if (guiState == APP_STATE) {
+          dispatchActiveAppButton(WatchslingerButton::Down);
         }
       }
     }
@@ -351,6 +306,7 @@ void Watchslinger::handleButtonPress() {
 }
 
 void Watchslinger::showMenu(byte menuIndex, bool partialRefresh) {
+  closeActiveApp();
   WatchslingerMenu menu(*this, appRegistry());
   menu.show(menuIndex, partialRefresh, true);
 }

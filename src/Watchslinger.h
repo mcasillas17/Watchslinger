@@ -117,6 +117,9 @@ protected:
   virtual WatchslingerAppRegistry appRegistry();
 
 private:
+  void _selectMenuItem();
+  void _moveMenuSelection(int8_t delta, bool fastRefresh);
+  void _returnToWatchFace();
   void _bmaConfig();
   static void _configModeCallback(WiFiManager *myWiFiManager);
   static uint16_t _readRegister(uint8_t address, uint8_t reg, uint8_t *data,
