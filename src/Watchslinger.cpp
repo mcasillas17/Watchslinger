@@ -24,6 +24,69 @@ RTC_DATA_ATTR tmElements_t bootTime;
 RTC_DATA_ATTR uint32_t lastIPAddress;
 RTC_DATA_ATTR char lastSSID[30];
 
+namespace {
+WatchslingerLegacyApp aboutApp(&Watchslinger::showAbout);
+WatchslingerLegacyApp buzzApp(&Watchslinger::showBuzz);
+WatchslingerLegacyApp accelerometerApp(&Watchslinger::showAccelerometer);
+WatchslingerLegacyApp setTimeApp(&Watchslinger::setTime);
+WatchslingerLegacyApp wifiSetupApp(&Watchslinger::setupWifi);
+WatchslingerLegacyApp syncNtpApp(&Watchslinger::showSyncNTP);
+
+const WatchslingerAppDescriptor stockAppDescriptors[] = {
+    {"About Watchslinger", &aboutApp},
+    {"Vibrate Motor", &buzzApp},
+    {"Show Accelerometer", &accelerometerApp},
+    {"Set Time", &setTimeApp},
+    {"Setup WiFi", &wifiSetupApp},
+    {"Sync NTP", &syncNtpApp},
+};
+
+const WatchslingerAppList stockApps(
+    stockAppDescriptors,
+    sizeof(stockAppDescriptors) / sizeof(stockAppDescriptors[0]));
+}
+
+WatchslingerAppRegistry Watchslinger::appRegistry() {
+  switch (menuMode_) {
+  case WatchslingerMenuMode::StockPlusCustom:
+    return WatchslingerAppRegistry(stockApps, customApps_);
+  case WatchslingerMenuMode::CustomOnly:
+    return WatchslingerAppRegistry(customApps_);
+  case WatchslingerMenuMode::StockOnly:
+  default:
+    return WatchslingerAppRegistry(stockApps);
+  }
+}
+
+void Watchslinger::openApp(const WatchslingerAppDescriptor *descriptor) {
+  if (descriptor == nullptr || !descriptor->isLaunchable()) {
+    return;
+  }
+
+  closeActiveApp();
+  activeApp_ = descriptor->app;
+  guiState = APP_STATE;
+  activeApp_->onOpen(*this);
+
+  if (activeApp_ == descriptor->app && activeApp_->closeAfterOpen()) {
+    closeActiveApp();
+  }
+}
+
+void Watchslinger::closeActiveApp() {
+  if (activeApp_ == nullptr) {
+    return;
+  }
+
+  WatchslingerApp *closingApp = activeApp_;
+  activeApp_ = nullptr;
+  closingApp->onClose(*this);
+}
+
+bool Watchslinger::dispatchActiveAppButton(WatchslingerButton button) {
+  return activeApp_ != nullptr && activeApp_->onButton(*this, button);
+}
+
 void Watchslinger::init(String datetime) {
   esp_sleep_wakeup_cause_t wakeup_reason;
   wakeup_reason = esp_sleep_get_wakeup_cause(); // get wake up reason

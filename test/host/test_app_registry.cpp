@@ -85,6 +85,11 @@ int main() {
   ASSERT_TRUE(!watch.legacyOpened);
   legacyApp.onOpen(watch);
   ASSERT_TRUE(watch.legacyOpened);
+  ASSERT_TRUE(legacyApp.closeAfterOpen());
+  ASSERT_TRUE(!stockA.closeAfterOpen());
+
+  WatchslingerLegacyApp missingLegacyApp(nullptr);
+  missingLegacyApp.onOpen(watch);
 
   printf("all app registry tests passed\n");
   return 0;

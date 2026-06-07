@@ -17,6 +17,7 @@ public:
   virtual ~WatchslingerApp() {}
   virtual void onOpen(Watchslinger &watch) = 0;
   virtual void onClose(Watchslinger &watch) { (void)watch; }
+  virtual bool closeAfterOpen() const { return false; }
   virtual bool onButton(Watchslinger &watch, WatchslingerButton button) {
     (void)watch;
     (void)button;
@@ -79,7 +80,12 @@ public:
   explicit WatchslingerLegacyApp(WatchslingerLegacyHandler handler)
       : handler_(handler) {}
 
-  void onOpen(Watchslinger &watch) override { (watch.*handler_)(); }
+  void onOpen(Watchslinger &watch) override {
+    if (handler_ != nullptr) {
+      (watch.*handler_)();
+    }
+  }
+  bool closeAfterOpen() const override { return true; }
 
 private:
   WatchslingerLegacyHandler handler_;

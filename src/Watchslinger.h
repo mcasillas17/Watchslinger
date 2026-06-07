@@ -15,6 +15,7 @@
 #include "BLE.h"
 #include "bma.h"
 #include "config.h"
+#include "WatchslingerApp.h"
 #include "esp_chip_info.h"
 #ifdef WATCHSLINGER_V3
   #include "Watchy32KRTC.h"
@@ -74,7 +75,14 @@ public:
   watchySettings settings;
 
 public:
-  explicit Watchslinger(const watchySettings &s) : settings(s) {} // constructor
+  explicit Watchslinger(const watchySettings &s)
+      : settings(s), customApps_(), menuMode_(WatchslingerMenuMode::StockOnly),
+        activeApp_(nullptr) {} // constructor
+  Watchslinger(const watchySettings &s, WatchslingerAppList customApps,
+               WatchslingerMenuMode menuMode =
+                   WatchslingerMenuMode::StockPlusCustom)
+      : settings(s), customApps_(customApps), menuMode_(menuMode),
+        activeApp_(nullptr) {}
   void init(String datetime = "");
   void deepSleep();
   float getBatteryVoltage();
@@ -101,6 +109,12 @@ public:
   void showWatchFace(bool partialRefresh);
   virtual void drawWatchFace(); // override this method for different watch
                                 // faces
+  void openApp(const WatchslingerAppDescriptor *descriptor);
+  void closeActiveApp();
+  bool dispatchActiveAppButton(WatchslingerButton button);
+
+protected:
+  virtual WatchslingerAppRegistry appRegistry();
 
 private:
   void _bmaConfig();
@@ -111,6 +125,9 @@ private:
                                  uint16_t len);
   weatherData _getWeatherData(String cityID, String lat, String lon, String units, String lang,
                              String url, String apiKey, uint8_t updateInterval);
+  WatchslingerAppList customApps_;
+  WatchslingerMenuMode menuMode_;
+  WatchslingerApp *activeApp_;
 };
 
 extern RTC_DATA_ATTR int guiState;
