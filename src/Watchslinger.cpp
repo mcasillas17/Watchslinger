@@ -1,13 +1,14 @@
-#include "Watchy.h"
+#include "Watchslinger.h"
+#include "WatchslingerMenu.h"
 
-#ifdef ARDUINO_ESP32S3_DEV
-  Watchy32KRTC Watchy::RTC;
+#ifdef WATCHSLINGER_V3
+  Watchy32KRTC Watchslinger::RTC;
   #define ACTIVE_LOW 0
 #else
-  WatchyRTC Watchy::RTC;
+  WatchyRTC Watchslinger::RTC;
   #define ACTIVE_LOW 1
 #endif
-GxEPD2_BW<WatchyDisplay, WatchyDisplay::HEIGHT> Watchy::display(
+GxEPD2_BW<WatchyDisplay, WatchyDisplay::HEIGHT> Watchslinger::display(
     WatchyDisplay{});
 
 RTC_DATA_ATTR int guiState;
@@ -24,10 +25,73 @@ RTC_DATA_ATTR tmElements_t bootTime;
 RTC_DATA_ATTR uint32_t lastIPAddress;
 RTC_DATA_ATTR char lastSSID[30];
 
-void Watchy::init(String datetime) {
+namespace {
+WatchslingerLegacyApp aboutApp(&Watchslinger::showAbout);
+WatchslingerLegacyApp buzzApp(&Watchslinger::showBuzz);
+WatchslingerLegacyApp accelerometerApp(&Watchslinger::showAccelerometer);
+WatchslingerLegacyApp setTimeApp(&Watchslinger::setTime);
+WatchslingerLegacyApp wifiSetupApp(&Watchslinger::setupWifi);
+WatchslingerLegacyApp syncNtpApp(&Watchslinger::showSyncNTP);
+
+const WatchslingerAppDescriptor stockAppDescriptors[] = {
+    {"About Watchslinger", &aboutApp},
+    {"Vibrate Motor", &buzzApp},
+    {"Show Accelerometer", &accelerometerApp},
+    {"Set Time", &setTimeApp},
+    {"Setup WiFi", &wifiSetupApp},
+    {"Sync NTP", &syncNtpApp},
+};
+
+const WatchslingerAppList stockApps(
+    stockAppDescriptors,
+    sizeof(stockAppDescriptors) / sizeof(stockAppDescriptors[0]));
+}
+
+WatchslingerAppRegistry Watchslinger::appRegistry() {
+  switch (menuMode_) {
+  case WatchslingerMenuMode::StockPlusCustom:
+    return WatchslingerAppRegistry(stockApps, customApps_);
+  case WatchslingerMenuMode::CustomOnly:
+    return WatchslingerAppRegistry(customApps_);
+  case WatchslingerMenuMode::StockOnly:
+  default:
+    return WatchslingerAppRegistry(stockApps);
+  }
+}
+
+void Watchslinger::openApp(const WatchslingerAppDescriptor *descriptor) {
+  if (descriptor == nullptr || !descriptor->isLaunchable()) {
+    return;
+  }
+
+  closeActiveApp();
+  activeApp_ = descriptor->app;
+  guiState = APP_STATE;
+  activeApp_->onOpen(*this);
+
+  if (activeApp_ == descriptor->app && activeApp_->closeAfterOpen()) {
+    closeActiveApp();
+  }
+}
+
+void Watchslinger::closeActiveApp() {
+  if (activeApp_ == nullptr) {
+    return;
+  }
+
+  WatchslingerApp *closingApp = activeApp_;
+  activeApp_ = nullptr;
+  closingApp->onClose(*this);
+}
+
+bool Watchslinger::dispatchActiveAppButton(WatchslingerButton button) {
+  return activeApp_ != nullptr && activeApp_->onButton(*this, button);
+}
+
+void Watchslinger::init(String datetime) {
   esp_sleep_wakeup_cause_t wakeup_reason;
   wakeup_reason = esp_sleep_get_wakeup_cause(); // get wake up reason
-  #ifdef ARDUINO_ESP32S3_DEV
+  #ifdef WATCHSLINGER_V3
     Wire.begin(WATCHY_V3_SDA, WATCHY_V3_SCL);     // init i2c
   #else
     Wire.begin(SDA, SCL);                         // init i2c
@@ -37,7 +101,7 @@ void Watchy::init(String datetime) {
   display.epd2.initWatchy();
 
   switch (wakeup_reason) {
-  #ifdef ARDUINO_ESP32S3_DEV
+  #ifdef WATCHSLINGER_V3
   case ESP_SLEEP_WAKEUP_TIMER: // RTC Alarm
   #else
   case ESP_SLEEP_WAKEUP_EXT0: // RTC Alarm
@@ -67,7 +131,7 @@ void Watchy::init(String datetime) {
   case ESP_SLEEP_WAKEUP_EXT1: // button Press
     handleButtonPress();
     break;
-  #ifdef ARDUINO_ESP32S3_DEV
+  #ifdef WATCHSLINGER_V3
   case ESP_SLEEP_WAKEUP_EXT0: // USB plug in
     pinMode(USB_DET_PIN, INPUT);
     USB_PLUGGED_IN = (digitalRead(USB_DET_PIN) == 1);
@@ -80,7 +144,7 @@ void Watchy::init(String datetime) {
   default: // reset
     RTC.config(datetime);
     _bmaConfig();
-    #ifdef ARDUINO_ESP32S3_DEV
+    #ifdef WATCHSLINGER_V3
     pinMode(USB_DET_PIN, INPUT);
     USB_PLUGGED_IN = (digitalRead(USB_DET_PIN) == 1);
     #endif    
@@ -95,10 +159,10 @@ void Watchy::init(String datetime) {
   }
   deepSleep();
 }
-void Watchy::deepSleep() {
+void Watchslinger::deepSleep() {
   display.hibernate();
   RTC.clearAlarm();        // resets the alarm flag in the RTC
-  #ifdef ARDUINO_ESP32S3_DEV
+  #ifdef WATCHSLINGER_V3
   esp_sleep_enable_ext0_wakeup((gpio_num_t)USB_DET_PIN, USB_PLUGGED_IN ? LOW : HIGH); //// enable deep sleep wake on USB plug in/out
   rtc_gpio_set_direction((gpio_num_t)USB_DET_PIN, RTC_GPIO_MODE_INPUT_ONLY);
   rtc_gpio_pullup_en((gpio_num_t)USB_DET_PIN);
@@ -132,77 +196,61 @@ void Watchy::deepSleep() {
   esp_deep_sleep_start();
 }
 
-void Watchy::handleButtonPress() {
+void Watchslinger::_selectMenuItem() {
+  WatchslingerMenu menu(*this, appRegistry());
+  menu.launch(menuIndex);
+}
+
+void Watchslinger::_moveMenuSelection(int8_t delta, bool fastRefresh) {
+  WatchslingerMenu menu(*this, appRegistry());
+  menuIndex = menu.wrappedIndex(menuIndex, delta);
+  if (fastRefresh) {
+    showFastMenu(menuIndex);
+  } else {
+    showMenu(menuIndex, true);
+  }
+}
+
+void Watchslinger::_returnToWatchFace() {
+  RTC.read(currentTime);
+  showWatchFace(false);
+}
+
+void Watchslinger::handleButtonPress() {
   uint64_t wakeupBit = esp_sleep_get_ext1_wakeup_status();
-  // Menu Button
   if (wakeupBit & MENU_BTN_MASK) {
-    if (guiState ==
-        WATCHFACE_STATE) { // enter menu state if coming from watch face
+    if (guiState == WATCHFACE_STATE) {
       showMenu(menuIndex, false);
-    } else if (guiState ==
-               MAIN_MENU_STATE) { // if already in menu, then select menu item
-      switch (menuIndex) {
-      case 0:
-        showAbout();
-        break;
-      case 1:
-        showBuzz();
-        break;
-      case 2:
-        showAccelerometer();
-        break;
-      case 3:
-        setTime();
-        break;
-      case 4:
-        setupWifi();
-        break;
-      /*case 5:
-        showUpdateFW();
-        break;*/
-      case 5:
-        showSyncNTP();
-        break;
-      default:
-        break;
-      }
-    } /*else if (guiState == FW_UPDATE_STATE) {
-      updateFWBegin();
-    }*/
-  }
-  // Back Button
-  else if (wakeupBit & BACK_BTN_MASK) {
-    if (guiState == MAIN_MENU_STATE) { // exit to watch face if already in menu
-      RTC.read(currentTime);
-      showWatchFace(false);
+    } else if (guiState == MAIN_MENU_STATE) {
+      _selectMenuItem();
     } else if (guiState == APP_STATE) {
-      showMenu(menuIndex, false); // exit to menu if already in app
+      dispatchActiveAppButton(WatchslingerButton::Menu);
+    }
+  } else if (wakeupBit & BACK_BTN_MASK) {
+    if (guiState == MAIN_MENU_STATE) {
+      _returnToWatchFace();
+    } else if (guiState == APP_STATE) {
+      if (!dispatchActiveAppButton(WatchslingerButton::Back)) {
+        showMenu(menuIndex, false);
+      }
     } else if (guiState == FW_UPDATE_STATE) {
-      showMenu(menuIndex, false); // exit to menu if already in app
+      showMenu(menuIndex, false);
     } else if (guiState == WATCHFACE_STATE) {
       return;
     }
-  }
-  // Up Button
-  else if (wakeupBit & UP_BTN_MASK) {
-    if (guiState == MAIN_MENU_STATE) { // increment menu index
-      menuIndex--;
-      if (menuIndex < 0) {
-        menuIndex = MENU_LENGTH - 1;
-      }
-      showMenu(menuIndex, true);
+  } else if (wakeupBit & UP_BTN_MASK) {
+    if (guiState == MAIN_MENU_STATE) {
+      _moveMenuSelection(-1, false);
+    } else if (guiState == APP_STATE) {
+      dispatchActiveAppButton(WatchslingerButton::Up);
     } else if (guiState == WATCHFACE_STATE) {
       return;
     }
-  }
-  // Down Button
-  else if (wakeupBit & DOWN_BTN_MASK) {
-    if (guiState == MAIN_MENU_STATE) { // decrement menu index
-      menuIndex++;
-      if (menuIndex > MENU_LENGTH - 1) {
-        menuIndex = 0;
-      }
-      showMenu(menuIndex, true);
+  } else if (wakeupBit & DOWN_BTN_MASK) {
+    if (guiState == MAIN_MENU_STATE) {
+      _moveMenuSelection(1, false);
+    } else if (guiState == APP_STATE) {
+      dispatchActiveAppButton(WatchslingerButton::Down);
     } else if (guiState == WATCHFACE_STATE) {
       return;
     }
@@ -221,137 +269,54 @@ void Watchy::handleButtonPress() {
     } else {
       if (digitalRead(MENU_BTN_PIN) == ACTIVE_LOW) {
         lastTimeout = millis();
-        if (guiState ==
-            MAIN_MENU_STATE) { // if already in menu, then select menu item
-          switch (menuIndex) {
-          case 0:
-            showAbout();
-            break;
-          case 1:
-            showBuzz();
-            break;
-          case 2:
-            showAccelerometer();
-            break;
-          case 3:
-            setTime();
-            break;
-          case 4:
-            setupWifi();
-            break;
-          /*case 5:
-            showUpdateFW();
-            break;*/
-          case 5:
-            showSyncNTP();
-            break;
-          default:
-            break;
-          }
-        }/* else if (guiState == FW_UPDATE_STATE) {
-          updateFWBegin();
-        }*/
+        if (guiState == MAIN_MENU_STATE) {
+          _selectMenuItem();
+        } else if (guiState == APP_STATE) {
+          dispatchActiveAppButton(WatchslingerButton::Menu);
+        }
       } else if (digitalRead(BACK_BTN_PIN) == ACTIVE_LOW) {
         lastTimeout = millis();
-        if (guiState ==
-            MAIN_MENU_STATE) { // exit to watch face if already in menu
-          RTC.read(currentTime);
-          showWatchFace(false);
-          break; // leave loop
+        if (guiState == MAIN_MENU_STATE) {
+          _returnToWatchFace();
+          break;
         } else if (guiState == APP_STATE) {
-          showMenu(menuIndex, false); // exit to menu if already in app
+          if (!dispatchActiveAppButton(WatchslingerButton::Back)) {
+            showMenu(menuIndex, false);
+          }
         } else if (guiState == FW_UPDATE_STATE) {
-          showMenu(menuIndex, false); // exit to menu if already in app
+          showMenu(menuIndex, false);
         }
       } else if (digitalRead(UP_BTN_PIN) == ACTIVE_LOW) {
         lastTimeout = millis();
-        if (guiState == MAIN_MENU_STATE) { // increment menu index
-          menuIndex--;
-          if (menuIndex < 0) {
-            menuIndex = MENU_LENGTH - 1;
-          }
-          showFastMenu(menuIndex);
+        if (guiState == MAIN_MENU_STATE) {
+          _moveMenuSelection(-1, true);
+        } else if (guiState == APP_STATE) {
+          dispatchActiveAppButton(WatchslingerButton::Up);
         }
       } else if (digitalRead(DOWN_BTN_PIN) == ACTIVE_LOW) {
         lastTimeout = millis();
-        if (guiState == MAIN_MENU_STATE) { // decrement menu index
-          menuIndex++;
-          if (menuIndex > MENU_LENGTH - 1) {
-            menuIndex = 0;
-          }
-          showFastMenu(menuIndex);
+        if (guiState == MAIN_MENU_STATE) {
+          _moveMenuSelection(1, true);
+        } else if (guiState == APP_STATE) {
+          dispatchActiveAppButton(WatchslingerButton::Down);
         }
       }
     }
   }
 }
 
-void Watchy::showMenu(byte menuIndex, bool partialRefresh) {
-  display.setFullWindow();
-  display.fillScreen(GxEPD_BLACK);
-  display.setFont(&FreeMonoBold9pt7b);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-  int16_t yPos;
-
-  const char *menuItems[] = {
-      "About Watchy", "Vibrate Motor", "Show Accelerometer",
-      "Set Time",     "Setup WiFi",    /*"Update Firmware",*/
-      "Sync NTP"};
-  for (int i = 0; i < MENU_LENGTH; i++) {
-    yPos = MENU_HEIGHT + (MENU_HEIGHT * i);
-    display.setCursor(0, yPos);
-    if (i == menuIndex) {
-      display.getTextBounds(menuItems[i], 0, yPos, &x1, &y1, &w, &h);
-      display.fillRect(x1 - 1, y1 - 10, 200, h + 15, GxEPD_WHITE);
-      display.setTextColor(GxEPD_BLACK);
-      display.println(menuItems[i]);
-    } else {
-      display.setTextColor(GxEPD_WHITE);
-      display.println(menuItems[i]);
-    }
-  }
-
-  display.display(partialRefresh);
-
-  guiState = MAIN_MENU_STATE;
-  alreadyInMenu = false;
+void Watchslinger::showMenu(byte menuIndex, bool partialRefresh) {
+  closeActiveApp();
+  WatchslingerMenu menu(*this, appRegistry());
+  menu.show(menuIndex, partialRefresh, true);
 }
 
-void Watchy::showFastMenu(byte menuIndex) {
-  display.setFullWindow();
-  display.fillScreen(GxEPD_BLACK);
-  display.setFont(&FreeMonoBold9pt7b);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-  int16_t yPos;
-
-  const char *menuItems[] = {
-      "About Watchy", "Vibrate Motor", "Show Accelerometer",
-      "Set Time",     "Setup WiFi",    /*"Update Firmware",*/
-      "Sync NTP"};
-  for (int i = 0; i < MENU_LENGTH; i++) {
-    yPos = MENU_HEIGHT + (MENU_HEIGHT * i);
-    display.setCursor(0, yPos);
-    if (i == menuIndex) {
-      display.getTextBounds(menuItems[i], 0, yPos, &x1, &y1, &w, &h);
-      display.fillRect(x1 - 1, y1 - 10, 200, h + 15, GxEPD_WHITE);
-      display.setTextColor(GxEPD_BLACK);
-      display.println(menuItems[i]);
-    } else {
-      display.setTextColor(GxEPD_WHITE);
-      display.println(menuItems[i]);
-    }
-  }
-
-  display.display(true);
-
-  guiState = MAIN_MENU_STATE;
+void Watchslinger::showFastMenu(byte menuIndex) {
+  WatchslingerMenu menu(*this, appRegistry());
+  menu.show(menuIndex, true, false);
 }
 
-void Watchy::showAbout() {
+void Watchslinger::showAbout() {
   display.setFullWindow();
   display.fillScreen(GxEPD_BLACK);
   display.setFont(&FreeMonoBold9pt7b);
@@ -369,7 +334,7 @@ void Watchy::showAbout() {
   display.print(voltage);
   display.println("V");
 
-  #ifndef ARDUINO_ESP32S3_DEV
+  #ifndef WATCHSLINGER_V3
   display.print("Uptime: ");
   RTC.read(currentTime);
   time_t b = makeTime(bootTime);
@@ -400,7 +365,7 @@ void Watchy::showAbout() {
   guiState = APP_STATE;
 }
 
-void Watchy::showBuzz() {
+void Watchslinger::showBuzz() {
   display.setFullWindow();
   display.fillScreen(GxEPD_BLACK);
   display.setFont(&FreeMonoBold9pt7b);
@@ -412,7 +377,7 @@ void Watchy::showBuzz() {
   showMenu(menuIndex, false);
 }
 
-void Watchy::vibMotor(uint8_t intervalMs, uint8_t length) {
+void Watchslinger::vibMotor(uint8_t intervalMs, uint8_t length) {
   pinMode(VIB_MOTOR_PIN, OUTPUT);
   bool motorOn = false;
   for (int i = 0; i < length; i++) {
@@ -422,13 +387,13 @@ void Watchy::vibMotor(uint8_t intervalMs, uint8_t length) {
   }
 }
 
-void Watchy::setTime() {
+void Watchslinger::setTime() {
 
   guiState = APP_STATE;
 
   RTC.read(currentTime);
 
-  #ifdef ARDUINO_ESP32S3_DEV
+  #ifdef WATCHSLINGER_V3
   uint8_t minute = currentTime.Minute;
   uint8_t hour   = currentTime.Hour;
   uint8_t day    = currentTime.Day;
@@ -576,7 +541,7 @@ void Watchy::setTime() {
   tmElements_t tm;
   tm.Month  = month;
   tm.Day    = day;
-  #ifdef ARDUINO_ESP32S3_DEV
+  #ifdef WATCHSLINGER_V3
   tm.Year   = year;
   #else
   tm.Year   = y2kYearToTm(year);
@@ -590,7 +555,7 @@ void Watchy::setTime() {
   showMenu(menuIndex, false);
 }
 
-void Watchy::showAccelerometer() {
+void Watchslinger::showAccelerometer() {
   display.setFullWindow();
   display.fillScreen(GxEPD_BLACK);
   display.setFont(&FreeMonoBold9pt7b);
@@ -662,7 +627,7 @@ void Watchy::showAccelerometer() {
   showMenu(menuIndex, false);
 }
 
-void Watchy::showWatchFace(bool partialRefresh) {
+void Watchslinger::showWatchFace(bool partialRefresh) {
   display.setFullWindow();
   // At this point it is sure we are going to update
   display.epd2.asyncPowerOn();
@@ -671,7 +636,7 @@ void Watchy::showWatchFace(bool partialRefresh) {
   guiState = WATCHFACE_STATE;
 }
 
-void Watchy::drawWatchFace() {
+void Watchslinger::drawWatchFace() {
   display.setFont(&DSEG7_Classic_Bold_53);
   display.setCursor(5, 53 + 60);
   if (currentTime.Hour < 10) {
@@ -685,13 +650,13 @@ void Watchy::drawWatchFace() {
   display.println(currentTime.Minute);
 }
 
-weatherData Watchy::getWeatherData() {
+weatherData Watchslinger::getWeatherData() {
   return _getWeatherData(settings.cityID, settings.lat, settings.lon,
     settings.weatherUnit, settings.weatherLang, settings.weatherURL,
     settings.weatherAPIKey, settings.weatherUpdateInterval);
 }
 
-weatherData Watchy::_getWeatherData(String cityID, String lat, String lon, String units, String lang,
+weatherData Watchslinger::_getWeatherData(String cityID, String lat, String lon, String units, String lang,
                                    String url, String apiKey,
                                    uint8_t updateInterval) {
   currentWeather.isMetric = units == String("metric");
@@ -753,8 +718,8 @@ weatherData Watchy::_getWeatherData(String cityID, String lat, String lon, Strin
   return currentWeather;
 }
 
-float Watchy::getBatteryVoltage() {
-  #ifdef ARDUINO_ESP32S3_DEV
+float Watchslinger::getBatteryVoltage() {
+  #ifdef WATCHSLINGER_V3
     return analogReadMilliVolts(BATT_ADC_PIN) / 1000.0f * ADC_VOLTAGE_DIVIDER;
   #else
   if (RTC.rtcType == DS3231) {
@@ -766,7 +731,7 @@ float Watchy::getBatteryVoltage() {
   #endif
 }
 
-uint8_t Watchy::getBoardRevision() {
+uint8_t Watchslinger::getBoardRevision() {
   esp_chip_info_t chip_info;
   esp_chip_info(&chip_info);
   if(chip_info.model == CHIP_ESP32){ //Revision 1.0 - 2.0
@@ -791,7 +756,7 @@ uint8_t Watchy::getBoardRevision() {
   return -1;
 }
 
-uint16_t Watchy::_readRegister(uint8_t address, uint8_t reg, uint8_t *data,
+uint16_t Watchslinger::_readRegister(uint8_t address, uint8_t reg, uint8_t *data,
                                uint16_t len) {
   Wire.beginTransmission(address);
   Wire.write(reg);
@@ -804,7 +769,7 @@ uint16_t Watchy::_readRegister(uint8_t address, uint8_t reg, uint8_t *data,
   return 0;
 }
 
-uint16_t Watchy::_writeRegister(uint8_t address, uint8_t reg, uint8_t *data,
+uint16_t Watchslinger::_writeRegister(uint8_t address, uint8_t reg, uint8_t *data,
                                 uint16_t len) {
   Wire.beginTransmission(address);
   Wire.write(reg);
@@ -812,7 +777,7 @@ uint16_t Watchy::_writeRegister(uint8_t address, uint8_t reg, uint8_t *data,
   return (0 != Wire.endTransmission());
 }
 
-void Watchy::_bmaConfig() {
+void Watchslinger::_bmaConfig() {
 
   if (sensor.begin(_readRegister, _writeRegister, delay) == false) {
     // fail to init BMA
@@ -908,7 +873,7 @@ void Watchy::_bmaConfig() {
   sensor.enableWakeupInterrupt();
 }
 
-void Watchy::setupWifi() {
+void Watchslinger::setupWifi() {
   display.epd2.setBusyCallback(0); // temporarily disable lightsleep on busy
   WiFiManager wifiManager;
   wifiManager.resetSettings();
@@ -939,7 +904,7 @@ void Watchy::setupWifi() {
   guiState = APP_STATE;
 }
 
-void Watchy::_configModeCallback(WiFiManager *myWiFiManager) {
+void Watchslinger::_configModeCallback(WiFiManager *myWiFiManager) {
   display.setFullWindow();
   display.fillScreen(GxEPD_BLACK);
   display.setFont(&FreeMonoBold9pt7b);
@@ -955,7 +920,7 @@ void Watchy::_configModeCallback(WiFiManager *myWiFiManager) {
   display.display(false); // full refresh
 }
 
-bool Watchy::connectWiFi() {
+bool Watchslinger::connectWiFi() {
   if (WL_CONNECT_FAILED ==
       WiFi.begin()) { // WiFi not setup, you can also use hard coded credentials
                       // with WiFi.begin(SSID,PASS);
@@ -976,7 +941,7 @@ bool Watchy::connectWiFi() {
   return WIFI_CONFIGURED;
 }
 /*
-void Watchy::showUpdateFW() {
+void Watchslinger::showUpdateFW() {
   display.setFullWindow();
   display.fillScreen(GxEPD_BLACK);
   display.setFont(&FreeMonoBold9pt7b);
@@ -996,7 +961,7 @@ void Watchy::showUpdateFW() {
   guiState = FW_UPDATE_STATE;
 }
 
-void Watchy::updateFWBegin() {
+void Watchslinger::updateFWBegin() {
   display.setFullWindow();
   display.fillScreen(GxEPD_BLACK);
   display.setFont(&FreeMonoBold9pt7b);
@@ -1082,7 +1047,7 @@ void Watchy::updateFWBegin() {
   showMenu(menuIndex, false);
 }
 */
-void Watchy::showSyncNTP() {
+void Watchslinger::showSyncNTP() {
   display.setFullWindow();
   display.fillScreen(GxEPD_BLACK);
   display.setFont(&FreeMonoBold9pt7b);
@@ -1128,17 +1093,17 @@ void Watchy::showSyncNTP() {
   showMenu(menuIndex, false);
 }
 
-bool Watchy::syncNTP() { // NTP sync - call after connecting to WiFi and
+bool Watchslinger::syncNTP() { // NTP sync - call after connecting to WiFi and
                          // remember to turn it back off
   return syncNTP(gmtOffset,
                  settings.ntpServer.c_str());
 }
 
-bool Watchy::syncNTP(long gmt) {
+bool Watchslinger::syncNTP(long gmt) {
   return syncNTP(gmt, settings.ntpServer.c_str());
 }
 
-bool Watchy::syncNTP(long gmt, String ntpServer) {
+bool Watchslinger::syncNTP(long gmt, String ntpServer) {
   // NTP sync - call after connecting to
   // WiFi and remember to turn it back off
   WiFiUDP ntpUDP;

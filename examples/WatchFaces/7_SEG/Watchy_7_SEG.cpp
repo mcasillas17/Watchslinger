@@ -20,7 +20,7 @@ void Watchy7SEG::drawWatchFace(){
     if(BLE_CONFIGURED){
         display.drawBitmap(100, 73, bluetooth, 13, 21, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
     }
-    #ifdef ARDUINO_ESP32S3_DEV
+    #ifdef WATCHSLINGER_V3
     if(USB_PLUGGED_IN){
       display.drawBitmap(140, 75, charge, 16, 18, DARKMODE ? GxEPD_WHITE : GxEPD_BLACK);
     }

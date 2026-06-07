@@ -1,12 +1,18 @@
 #ifndef CONFIG_H
 #define CONFIG_H
 
+#if defined(ARDUINO_WATCHY_V30) || defined(ARDUINO_ESP32S3_DEV)
+  #ifndef WATCHSLINGER_V3
+    #define WATCHSLINGER_V3
+  #endif
+#endif
+
 // Versioning
 #define WATCHY_LIB_VER "1.4.14"
 
 //pins
 
-#ifdef ARDUINO_ESP32S3_DEV //V3
+#ifdef WATCHSLINGER_V3 //V3
 
 #define WATCHY_V3_SDA 12
 #define WATCHY_V3_SCL 11
