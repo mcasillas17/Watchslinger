@@ -16,6 +16,7 @@
 #include "bma.h"
 #include "config.h"
 #include "WatchslingerTypes.h"
+#include "WeatherProvider.h"
 #include "WatchslingerApp.h"
 #include "esp_chip_info.h"
 #ifdef WATCHSLINGER_V3
@@ -51,12 +52,19 @@ public:
 public:
   explicit Watchslinger(const watchySettings &s)
       : settings(s), customApps_(), menuMode_(WatchslingerMenuMode::StockOnly),
-        activeApp_(nullptr) {} // constructor
+        activeApp_(nullptr), weatherProvider_(&defaultWeatherProvider()) {}
+  explicit Watchslinger(const watchySettings &s, WeatherProvider &weatherProvider)
+      : settings(s), customApps_(), menuMode_(WatchslingerMenuMode::StockOnly),
+        activeApp_(nullptr), weatherProvider_(&weatherProvider) {}
   Watchslinger(const watchySettings &s, WatchslingerAppList customApps,
                WatchslingerMenuMode menuMode =
                    WatchslingerMenuMode::StockPlusCustom)
       : settings(s), customApps_(customApps), menuMode_(menuMode),
-        activeApp_(nullptr) {}
+        activeApp_(nullptr), weatherProvider_(&defaultWeatherProvider()) {}
+  Watchslinger(const watchySettings &s, WatchslingerAppList customApps,
+               WatchslingerMenuMode menuMode, WeatherProvider &weatherProvider)
+      : settings(s), customApps_(customApps), menuMode_(menuMode),
+        activeApp_(nullptr), weatherProvider_(&weatherProvider) {}
   void init(String datetime = "");
   void deepSleep();
   float getBatteryVoltage();
@@ -78,6 +86,7 @@ public:
   void setupWifi();
   bool connectWiFi();
   weatherData getWeatherData();
+  static WeatherProvider &defaultWeatherProvider();
   void updateFWBegin();
 
   void showWatchFace(bool partialRefresh);
@@ -100,11 +109,11 @@ private:
                                 uint16_t len);
   static uint16_t _writeRegister(uint8_t address, uint8_t reg, uint8_t *data,
                                  uint16_t len);
-  weatherData _getWeatherData(String cityID, String lat, String lon, String units, String lang,
-                             String url, String apiKey, uint8_t updateInterval);
+  void _useInternalTemperatureWeather();
   WatchslingerAppList customApps_;
   WatchslingerMenuMode menuMode_;
   WatchslingerApp *activeApp_;
+  WeatherProvider *weatherProvider_;
 };
 
 extern RTC_DATA_ATTR int guiState;
