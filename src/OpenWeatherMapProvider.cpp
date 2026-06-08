@@ -5,6 +5,12 @@
 #include <TimeLib.h>
 #include "WeatherCodeMapper.h"
 
+namespace {
+bool jsonHasType(const JSONVar &value, const char *type) {
+  return JSON.typeof(value) == String(type);
+}
+}
+
 String OpenWeatherMapProvider::buildUrl(const watchySettings &settings) const {
   if (watchslingerIsMissingOpenWeatherMapKey(settings.weatherAPIKey.c_str())) {
     return "";
@@ -43,26 +49,70 @@ bool OpenWeatherMapProvider::parseWeather(
   if (JSON.typeof(response) == "undefined") {
     return false;
   }
+  if (!jsonHasType(response, "object")) {
+    return false;
+  }
+
+  JSONVar main = response["main"];
+  if (!jsonHasType(main, "object")) {
+    return false;
+  }
+  JSONVar temperatureValue = main["temp"];
+  if (!jsonHasType(temperatureValue, "number")) {
+    return false;
+  }
+
+  JSONVar weatherArray = response["weather"];
+  if (!jsonHasType(weatherArray, "array")) {
+    return false;
+  }
+  if (weatherArray.length() < 1) {
+    return false;
+  }
+  JSONVar weatherEntry = weatherArray[0];
+  if (!jsonHasType(weatherEntry, "object")) {
+    return false;
+  }
+  JSONVar conditionCodeValue = weatherEntry["id"];
+  JSONVar descriptionValue = weatherEntry["main"];
+  if (!jsonHasType(conditionCodeValue, "number") ||
+      !jsonHasType(descriptionValue, "string")) {
+    return false;
+  }
+
+  JSONVar sys = response["sys"];
+  if (!jsonHasType(sys, "object")) {
+    return false;
+  }
+  JSONVar sunriseValue = sys["sunrise"];
+  JSONVar sunsetValue = sys["sunset"];
+  JSONVar timezoneValue = response["timezone"];
+  if (!jsonHasType(sunriseValue, "number") ||
+      !jsonHasType(sunsetValue, "number") ||
+      !jsonHasType(timezoneValue, "number")) {
+    return false;
+  }
+
+  tmElements_t parsedSunrise;
+  tmElements_t parsedSunset;
+  breakTime(static_cast<time_t>(static_cast<int>(sunriseValue)),
+            parsedSunrise);
+  breakTime(static_cast<time_t>(static_cast<int>(sunsetValue)), parsedSunset);
 
   weather.temperature =
-      static_cast<int8_t>(static_cast<int>(response["main"]["temp"]));
+      static_cast<int8_t>(static_cast<int>(temperatureValue));
   weather.weatherConditionCode =
-      static_cast<int16_t>(static_cast<int>(response["weather"][0]["id"]));
-  String description = JSONVar::stringify(response["weather"][0]["main"]);
-  description.replace("\"", "");
-  weather.weatherDescription = description;
+      static_cast<int16_t>(static_cast<int>(conditionCodeValue));
+  weather.weatherDescription = static_cast<const char *>(descriptionValue);
   weather.isMetric = settings.weatherUnit == String("metric");
+  weather.sunrise = parsedSunrise;
+  weather.sunset = parsedSunset;
   weather.external = true;
-
-  breakTime(static_cast<time_t>(static_cast<int>(response["sys"]["sunrise"])),
-            weather.sunrise);
-  breakTime(static_cast<time_t>(static_cast<int>(response["sys"]["sunset"])),
-            weather.sunset);
 
   if (providerResponse != nullptr) {
     providerResponse->hasTimezoneOffset = true;
-    providerResponse->timezoneOffset =
-        static_cast<long>(static_cast<int>(response["timezone"]));
+    providerResponse->timezoneOffset = static_cast<long>(
+        static_cast<int>(timezoneValue));
   }
 
   return true;

@@ -6,6 +6,12 @@
 #include <stdio.h>
 #include "WeatherCodeMapper.h"
 
+namespace {
+bool jsonHasType(const JSONVar &value, const char *type) {
+  return JSON.typeof(value) == String(type);
+}
+}
+
 String OpenMeteoProvider::buildUrl(const watchySettings &settings) const {
   if (settings.lat.length() == 0 || settings.lon.length() == 0) {
     return "";
@@ -51,15 +57,55 @@ bool OpenMeteoProvider::parseWeather(const String &payload,
   if (JSON.typeof(response) == "undefined") {
     return false;
   }
-
-  JSONVar current = response["current"];
-  if (JSON.typeof(current) == "undefined") {
+  if (!jsonHasType(response, "object")) {
     return false;
   }
 
-  double temperature = static_cast<double>(current["temperature_2m"]);
+  JSONVar current = response["current"];
+  if (!jsonHasType(current, "object")) {
+    return false;
+  }
+
+  JSONVar temperatureValue = current["temperature_2m"];
+  JSONVar weatherCodeValue = current["weather_code"];
+  if (!jsonHasType(temperatureValue, "number") ||
+      !jsonHasType(weatherCodeValue, "number")) {
+    return false;
+  }
+
+  JSONVar daily = response["daily"];
+  if (!jsonHasType(daily, "object")) {
+    return false;
+  }
+
+  JSONVar sunrise = daily["sunrise"];
+  JSONVar sunset = daily["sunset"];
+  if (!jsonHasType(sunrise, "array") || !jsonHasType(sunset, "array")) {
+    return false;
+  }
+  if (sunrise.length() < 1 || sunset.length() < 1) {
+    return false;
+  }
+
+  JSONVar sunriseValue = sunrise[0];
+  JSONVar sunsetValue = sunset[0];
+  if (!jsonHasType(sunriseValue, "string") ||
+      !jsonHasType(sunsetValue, "string")) {
+    return false;
+  }
+
+  tmElements_t parsedSunrise;
+  tmElements_t parsedSunset;
+  String sunriseText = static_cast<const char *>(sunriseValue);
+  String sunsetText = static_cast<const char *>(sunsetValue);
+  if (!parseIsoMinute(sunriseText, parsedSunrise) ||
+      !parseIsoMinute(sunsetText, parsedSunset)) {
+    return false;
+  }
+
+  double temperature = static_cast<double>(temperatureValue);
   int16_t weatherCode =
-      static_cast<int16_t>(static_cast<int>(current["weather_code"]));
+      static_cast<int16_t>(static_cast<int>(weatherCodeValue));
   WatchslingerWeatherCodeMapping mapped =
       watchslingerMapOpenMeteoCode(weatherCode);
 
@@ -67,22 +113,9 @@ bool OpenMeteoProvider::parseWeather(const String &payload,
   weather.weatherConditionCode = mapped.conditionCode;
   weather.weatherDescription = mapped.description;
   weather.isMetric = settings.weatherUnit != String("imperial");
+  weather.sunrise = parsedSunrise;
+  weather.sunset = parsedSunset;
   weather.external = true;
-
-  JSONVar daily = response["daily"];
-  if (JSON.typeof(daily) != "undefined") {
-    JSONVar sunrise = daily["sunrise"];
-    JSONVar sunset = daily["sunset"];
-    if (JSON.typeof(sunrise) != "undefined" &&
-        JSON.typeof(sunset) != "undefined") {
-      String sunriseValue = JSONVar::stringify(sunrise[0]);
-      String sunsetValue = JSONVar::stringify(sunset[0]);
-      sunriseValue.replace("\"", "");
-      sunsetValue.replace("\"", "");
-      parseIsoMinute(sunriseValue, weather.sunrise);
-      parseIsoMinute(sunsetValue, weather.sunset);
-    }
-  }
 
   return true;
 }
