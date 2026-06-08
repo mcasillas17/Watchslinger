@@ -15,6 +15,7 @@
 #include "BLE.h"
 #include "bma.h"
 #include "config.h"
+#include "WatchslingerTypes.h"
 #include "WatchslingerApp.h"
 #include "esp_chip_info.h"
 #ifdef WATCHSLINGER_V3
@@ -35,33 +36,6 @@
 #else
   #include "WatchyRTC.h"
 #endif
-
-typedef struct weatherData {
-  int8_t temperature;
-  int16_t weatherConditionCode;
-  bool isMetric;
-  String weatherDescription;
-  bool external;
-  tmElements_t sunrise;
-  tmElements_t sunset;
-} weatherData;
-
-typedef struct watchySettings {
-  // Weather Settings
-  String cityID;
-  String lat;
-  String lon;
-  String weatherAPIKey;
-  String weatherURL;
-  String weatherUnit;
-  String weatherLang;
-  int8_t weatherUpdateInterval;
-  // NTP Settings
-  String ntpServer;
-  int gmtOffset;
-  //
-  bool vibrateOClock;
-} watchySettings;
 
 class Watchslinger {
 public:
