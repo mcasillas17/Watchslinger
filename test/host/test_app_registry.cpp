@@ -53,22 +53,23 @@ int main() {
 
   const WatchslingerAppDescriptor stockItems[] = {
       {"About Watchslinger", &stockA},
+      {nullptr, &stockA},
+      {"Missing App", nullptr},
       {"Set Time", &stockB},
   };
   const WatchslingerAppDescriptor customItems[] = {
       {"Custom", &customA},
+      {nullptr, nullptr},
   };
 
-  WatchslingerAppRegistry stockOnly(
-      WatchslingerAppList(stockItems, 2));
+  WatchslingerAppRegistry stockOnly(WatchslingerAppList(stockItems, 4));
   ASSERT_EQ(2, stockOnly.count());
   ASSERT_TRUE(strcmp("About Watchslinger", stockOnly.get(0)->label) == 0);
   ASSERT_TRUE(strcmp("Set Time", stockOnly.get(1)->label) == 0);
   ASSERT_TRUE(stockOnly.get(2) == nullptr);
 
-  WatchslingerAppRegistry combined(
-      WatchslingerAppList(stockItems, 2),
-      WatchslingerAppList(customItems, 1));
+  WatchslingerAppRegistry combined(WatchslingerAppList(stockItems, 4),
+                                   WatchslingerAppList(customItems, 2));
   ASSERT_EQ(3, combined.count());
   ASSERT_TRUE(strcmp("Custom", combined.get(2)->label) == 0);
   ASSERT_TRUE(combined.get(3) == nullptr);

@@ -55,20 +55,44 @@ public:
                           WatchslingerAppList secondary = WatchslingerAppList())
       : primary_(primary), secondary_(secondary) {}
 
-  uint8_t count() const { return primary_.count + secondary_.count; }
+  uint8_t count() const {
+    return countLaunchable(primary_) + countLaunchable(secondary_);
+  }
 
   const WatchslingerAppDescriptor *get(uint8_t index) const {
-    if (index < primary_.count) {
-      return &primary_.items[index];
+    uint8_t primaryCount = countLaunchable(primary_);
+    if (index < primaryCount) {
+      return getLaunchable(primary_, index);
     }
-    index -= primary_.count;
-    if (index < secondary_.count) {
-      return &secondary_.items[index];
+    return getLaunchable(secondary_, index - primaryCount);
+  }
+
+private:
+  static uint8_t countLaunchable(WatchslingerAppList list) {
+    uint8_t total = 0;
+    for (uint8_t i = 0; i < list.count; i++) {
+      if (list.items[i].isLaunchable()) {
+        total++;
+      }
+    }
+    return total;
+  }
+
+  static const WatchslingerAppDescriptor *getLaunchable(
+      WatchslingerAppList list, uint8_t index) {
+    uint8_t launchableIndex = 0;
+    for (uint8_t i = 0; i < list.count; i++) {
+      if (!list.items[i].isLaunchable()) {
+        continue;
+      }
+      if (launchableIndex == index) {
+        return &list.items[i];
+      }
+      launchableIndex++;
     }
     return nullptr;
   }
 
-private:
   WatchslingerAppList primary_;
   WatchslingerAppList secondary_;
 };
